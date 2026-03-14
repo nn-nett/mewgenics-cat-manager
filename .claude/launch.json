@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "Vite (React renderer)",
+      "runtimeExecutable": "cmd",
+      "runtimeArgs": ["/c", "dev.bat"],
+      "port": 5173
+    }
+  ]
+}

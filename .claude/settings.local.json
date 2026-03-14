@@ -1,0 +1,11 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(where npm:*)",
+      "Bash(\"/c/Program Files/nodejs/npm.cmd\" install)",
+      "Bash(\"/c/Program Files/nodejs/node.exe\" scripts/inspectSave.mjs)",
+      "Bash(\"/c/Program Files/nodejs/node.exe\" -e \":*)",
+      "mcp__Claude_Preview__preview_start"
+    ]
+  }
+}
