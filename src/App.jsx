@@ -6,15 +6,16 @@ import CatTable from './components/CatGrid/CatTable'
 import DetailSidebar from './components/CatDetail/DetailSidebar'
 import CompareModal from './components/Compare/CompareModal'
 import BreedingHelper from './components/Breeding/BreedingHelper'
+import SaveDropZone from './components/SaveLoader/SaveDropZone'
 import { useCatData } from './hooks/useCatData'
 import { useDynamicOptions } from './hooks/useDynamicOptions'
 import { useLocalStore } from './hooks/useLocalStore'
 
 export default function App() {
   const {
-    cats, rooms, mode, currentFile, lastUpdate,
-    isFlashing, error, savePath, isElectron, useMock,
-    startLiveMode, stopLiveMode, openManualFile, toggleMode,
+    cats, rooms, mode, sourceMode, currentFile, lastUpdate,
+    isFlashing, isLoading, error, savePath, isElectron, useMock, hasData,
+    loadBrowserFile, startLiveMode, stopLiveMode, openManualFile, toggleMode,
   } = useCatData()
 
   const { favorites, tags, toggleFavorite, addTag, removeTag, getTagsForCat } = useLocalStore()
@@ -116,6 +117,24 @@ export default function App() {
     return result
   }, [cats, rooms])
 
+  // ─── Drop zone (browser sem dados) ──────────────────────────────────────────
+  if (!hasData && !isElectron) {
+    return (
+      <div className="flex flex-col h-screen overflow-hidden bg-bg-deep">
+        <div className="px-4 py-2 border-b border-purple-dark/50 flex items-center gap-3">
+          <span className="font-pixel text-2xl text-blood tracking-wider">MEWGENICS</span>
+          <span className="font-pixel text-xl text-muted">CAT MANAGER</span>
+        </div>
+        <SaveDropZone onLoad={loadBrowserFile} isLoading={isLoading} />
+        {error && (
+          <div className="px-4 py-2 bg-red-950/60 border-t border-red-900/60 text-red-300 text-xs font-mono">
+            ⚠️ {error}
+          </div>
+        )}
+      </div>
+    )
+  }
+
   return (
     <div className="flex flex-col h-screen overflow-hidden bg-bg-deep">
       {/* Header */}
@@ -128,6 +147,8 @@ export default function App() {
         useMock={useMock}
         onToggleMode={toggleMode}
         onOpenFile={openManualFile}
+        onReload={!isElectron ? () => loadBrowserFile(null, null) : null}
+        sourceMode={sourceMode}
       />
 
       {/* Alertas */}

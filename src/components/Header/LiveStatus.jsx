@@ -3,6 +3,7 @@ import { formatDistanceToNow } from '../../utils/time'
 
 export default function LiveStatus({
   mode,
+  sourceMode,
   currentFile,
   lastUpdate,
   isFlashing,
@@ -10,6 +11,7 @@ export default function LiveStatus({
   useMock,
   onToggleMode,
   onOpenFile,
+  onReload,
 }) {
   const [tick, setTick] = useState(0)
 
@@ -89,15 +91,21 @@ export default function LiveStatus({
 
       {/* Controles */}
       <div className="flex items-center gap-2">
+        {/* Browser: botão trocar save */}
+        {!isElectron && onReload && (
+          <button
+            onClick={onReload}
+            className="px-3 py-1.5 text-sm font-mono border border-muted/40 bg-bg-card hover:bg-bg-hover text-muted hover:text-white rounded transition-colors"
+          >
+            💾 Trocar Save
+          </button>
+        )}
+        {/* Electron: abrir + live mode */}
         {isElectron && (
           <>
             <button
               onClick={onOpenFile}
-              className="
-                px-3 py-1.5 text-sm font-mono border border-muted/40
-                bg-bg-card hover:bg-bg-hover text-muted hover:text-white
-                rounded transition-colors
-              "
+              className="px-3 py-1.5 text-sm font-mono border border-muted/40 bg-bg-card hover:bg-bg-hover text-muted hover:text-white rounded transition-colors"
             >
               Abrir Save
             </button>
