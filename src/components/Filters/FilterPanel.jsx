@@ -93,17 +93,19 @@ export default function FilterPanel({ options, filters, onFiltersChange, totalCo
           ))}
         </Section>
 
-        {/* Cômodo */}
-        <Section label="Cômodo" open={expandedSections.room} onToggle={() => toggle('room')}>
-          {options.rooms.map((r) => (
-            <CheckItem
-              key={r}
-              label={r}
-              checked={(filters.rooms || []).includes(r)}
-              onChange={() => toggleArrayItem('rooms', r)}
-            />
-          ))}
-        </Section>
+        {/* Cômodo — só aparece se houver cômodos reais */}
+        {options.rooms.filter((r) => r !== 'Unknown').length > 0 && (
+          <Section label="Cômodo" open={expandedSections.room} onToggle={() => toggle('room')}>
+            {options.rooms.filter((r) => r !== 'Unknown').map((r) => (
+              <CheckItem
+                key={r}
+                label={r}
+                checked={(filters.rooms || []).includes(r)}
+                onChange={() => toggleArrayItem('rooms', r)}
+              />
+            ))}
+          </Section>
+        )}
 
         {/* Stats (sliders) */}
         <Section label="Stats" open={expandedSections.stats} onToggle={() => toggle('stats')}>
@@ -135,20 +137,22 @@ export default function FilterPanel({ options, filters, onFiltersChange, totalCo
           </div>
         </Section>
 
-        {/* Mutações */}
-        <Section label="Mutações" open={expandedSections.mutations} onToggle={() => toggle('mutations')}>
-          <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
-            {options.mutations.map((m) => (
-              <CheckItem
-                key={m}
-                label={m}
-                checked={(filters.mutations || []).includes(m)}
-                onChange={() => toggleArrayItem('mutations', m)}
-                colorClass="text-neon-blue"
-              />
-            ))}
-          </div>
-        </Section>
+        {/* Mutações — só aparece se houver mutações nos dados */}
+        {options.mutations.length > 0 && (
+          <Section label="Mutações" open={expandedSections.mutations} onToggle={() => toggle('mutations')}>
+            <div className="max-h-40 overflow-y-auto space-y-1 pr-1">
+              {options.mutations.map((m) => (
+                <CheckItem
+                  key={m}
+                  label={m}
+                  checked={(filters.mutations || []).includes(m)}
+                  onChange={() => toggleArrayItem('mutations', m)}
+                  colorClass="text-neon-blue"
+                />
+              ))}
+            </div>
+          </Section>
+        )}
 
         {/* Tags */}
         {allTags.length > 0 && (

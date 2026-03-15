@@ -204,65 +204,52 @@ function findStats(buf) {
 
 const ABILITY_EXCLUDE = new Set(['None', 'DefaultMove'])
 
-function findAbilitiesAndClass(buf) {
-  let abilities = []
-  let className = 'Unknown'
-  let classLevel = 0
+// Classes reais do Mewgenics (determinadas pelo collar)
+const MEWGENICS_CLASSES = new Set([
+  'Collarless', 'Fighter', 'Hunter', 'Mage', 'Tank', 'Cleric',
+  'Thief', 'Necromancer', 'Tinkerer', 'Butcher', 'Druid',
+])
 
-  // Procura a string "DefaultMove" como início das abilities
+function findAbilities(buf) {
+  const abilities = []
   for (let i = 0x60; i < buf.length - 20; i++) {
     const r = readLenString(buf, i)
     if (r && r.str === 'DefaultMove') {
       let pos = i
-      // Lê bloco de abilities (inclui DefaultMove + reais + slots None)
       while (pos < buf.length - 8) {
         const a = readLenString(buf, pos)
         if (!a || !/^[A-Z][a-zA-Z0-9]+$/.test(a.str)) break
         if (!ABILITY_EXCLUDE.has(a.str)) abilities.push(a.str)
         pos = a.end
       }
-      // Busca a classe nos próximos 512 bytes após o bloco
-      for (let scan = pos; scan < Math.min(buf.length - 12, pos + 512); scan++) {
-        const cr = readLenString(buf, scan)
-        if (
-          cr &&
-          /^[A-Z][a-zA-Z]{2,29}$/.test(cr.str) &&
-          !ABILITY_EXCLUDE.has(cr.str) &&
-          !abilities.includes(cr.str)
-        ) {
-          const lvl = u32LE(buf, cr.end)
-          if (lvl <= 30) {
-            className = cr.str
-            classLevel = lvl
-            break
-          }
-        }
-      }
       break
     }
   }
+  return abilities
+}
 
-  // Fallback: última string PascalCase com nível 1-20 no final do blob
-  if (className === 'Unknown') {
-    const start = Math.max(0x60, buf.length - 1024)
-    for (let i = start; i < buf.length - 12; i++) {
-      const cr = readLenString(buf, i)
-      if (
-        cr &&
-        /^[A-Z][a-zA-Z]{3,29}$/.test(cr.str) &&
-        !ABILITY_EXCLUDE.has(cr.str) &&
-        !abilities.includes(cr.str)
-      ) {
-        const lvl = u32LE(buf, cr.end)
-        if (lvl >= 1 && lvl <= 20) {
-          className = cr.str
-          classLevel = lvl
-          break
-        }
-      }
+function findClass(buf) {
+  // Método 1: [u64 len][ASCII class] com nome exato conhecido
+  for (let i = 0; i < buf.length - 12; i++) {
+    const r = readLenString(buf, i)
+    if (r && MEWGENICS_CLASSES.has(r.str)) {
+      const level = u32LE(buf, r.end)
+      return { className: r.str, classLevel: level <= 50 ? level : 0 }
     }
   }
+  // Método 2: ASCII puro
+  const strings = findAsciiStrings(buf)
+  for (const { text } of strings) {
+    if (MEWGENICS_CLASSES.has(text)) {
+      return { className: text, classLevel: 0 }
+    }
+  }
+  return { className: 'Collarless', classLevel: 0 }
+}
 
+function findAbilitiesAndClass(buf) {
+  const abilities = findAbilities(buf)
+  const { className, classLevel } = findClass(buf)
   return { abilities, className, classLevel }
 }
 
@@ -352,22 +339,34 @@ async function parseSave(filePath) {
     console.error('[savParser] Erro ao ler gatos:', e)
   }
 
-  // house_state — cômodos
+  // house_state — cômodos e mapeamento gato→cômodo
   try {
     const filesResult = db.exec("SELECT key, data FROM files WHERE key = 'house_state'")
     if (filesResult[0]?.values?.length) {
       const blobRaw = filesResult[0].values[0][1]
       if (blobRaw instanceof Uint8Array) {
         const raw = Buffer.from(blobRaw)
-        const strings = findAsciiStrings(raw)
-        const roomNames = [
-          ...new Set(
-            strings
-              .map((s) => s.text)
-              .filter((s) => /^(Floor|Room|Garden|Library|Barracks|Chapel|Crypt)\d*/i.test(s))
-          ),
-        ]
+        const decompressed = decompressBlob(raw)
+        const buf = decompressed && decompressed.length > 100 ? decompressed : raw
+
+        const ROOM_PAT = /^(Garden|Library|Barracks|Chapel|Crypt|Floor|Room|Hall|Vault|Study|Training|Dormitory|Stable|Workshop|Shrine|Tower|Dungeon)\d*$/i
+        const strings = findAsciiStrings(buf)
+        const roomNames = [...new Set(strings.map((s) => s.text).filter((s) => ROOM_PAT.test(s)))]
         result.rooms = roomNames.map((name, i) => ({ id: String(i), name, capacity: 6, cats: [] }))
+
+        const catToRoom = {}
+        const catKeys = new Set(result.cats.map((c) => Number(c.id)))
+        for (const { offset, text } of strings) {
+          if (!ROOM_PAT.test(text)) continue
+          const end = Math.min(buf.length - 4, offset + text.length + 512)
+          for (let p = offset + text.length; p < end; p += 4) {
+            const v = u32LE(buf, p)
+            if (catKeys.has(v)) catToRoom[String(v)] = text
+          }
+        }
+        for (const cat of result.cats) {
+          if (catToRoom[cat.id]) cat.room = catToRoom[cat.id]
+        }
       }
     }
   } catch (_) {}
