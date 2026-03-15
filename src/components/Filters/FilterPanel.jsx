@@ -66,17 +66,19 @@ export default function FilterPanel({ options, filters, onFiltersChange, totalCo
           </label>
         </Section>
 
-        {/* Status */}
+        {/* Status — mortos e donated são sempre ocultados */}
         <Section label="Status" open={expandedSections.status} onToggle={() => toggle('status')}>
-          {options.statuses.map((s) => (
-            <CheckItem
-              key={s}
-              label={STATUS_LABELS[s] || s}
-              checked={(filters.statuses || []).includes(s)}
-              onChange={() => toggleArrayItem('statuses', s)}
-              colorClass={STATUS_COLORS[s]}
-            />
-          ))}
+          {options.statuses
+            .filter((s) => s !== 'dead' && s !== 'donated')
+            .map((s) => (
+              <CheckItem
+                key={s}
+                label={STATUS_LABELS[s] || s}
+                checked={(filters.statuses || []).includes(s)}
+                onChange={() => toggleArrayItem('statuses', s)}
+                colorClass={STATUS_COLORS[s]}
+              />
+            ))}
         </Section>
 
         {/* Classe */}

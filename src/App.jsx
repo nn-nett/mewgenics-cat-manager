@@ -21,7 +21,7 @@ export default function App() {
   const { favorites, tags, toggleFavorite, addTag, removeTag, getTagsForCat } = useLocalStore()
   const options = useDynamicOptions(cats)
 
-  const [filters, setFilters] = useState({ statuses: ['active'] })
+  const [filters, setFilters] = useState({})
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
   const [viewMode, setViewMode] = useState('grid') // 'grid' | 'list'
@@ -209,10 +209,7 @@ export default function App() {
               </div>
 
               <span className="text-xs font-mono text-muted/60">
-                {filteredCats.length} exibindo
-                <span className="text-muted/40 ml-1">
-                  ({cats.filter(c => c.status === 'active').length} ativos / {cats.length} total no save)
-                </span>
+                {filteredCats.length}/{cats.length} gatos
               </span>
             </div>
 

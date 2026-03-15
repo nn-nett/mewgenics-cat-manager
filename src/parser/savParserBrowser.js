@@ -204,6 +204,9 @@ function findStats(buf) {
   return { stats: emptyStats, bonusStats: {} }
 }
 
+// Abilities que são apenas placeholders — não mostrar
+const ABILITY_EXCLUDE = new Set(['None', 'DefaultMove'])
+
 function findAbilitiesAndClass(buf) {
   let abilities = []
   let className = 'Unknown'
@@ -213,34 +216,52 @@ function findAbilitiesAndClass(buf) {
     const r = readLenString(buf, i)
     if (r && r.str === 'DefaultMove') {
       let pos = i
+      // Lê o bloco de abilities (DefaultMove + reais + slots None)
       while (pos < buf.length - 8) {
         const a = readLenString(buf, pos)
         if (!a || !/^[A-Z][a-zA-Z0-9]+$/.test(a.str)) break
-        abilities.push(a.str)
+        if (!ABILITY_EXCLUDE.has(a.str)) abilities.push(a.str)
         pos = a.end
       }
-      const cr = readLenString(buf, pos)
-      if (cr && /^[A-Z][a-zA-Z]+$/.test(cr.str)) {
-        className = cr.str
-        classLevel = u32LE(buf, cr.end)
-        if (classLevel > 100) classLevel = 0
+      // Busca a classe nos próximos 512 bytes após o bloco de abilities
+      for (let scan = pos; scan < Math.min(buf.length - 12, pos + 512); scan++) {
+        const cr = readLenString(buf, scan)
+        if (
+          cr &&
+          /^[A-Z][a-zA-Z]{2,29}$/.test(cr.str) &&
+          !ABILITY_EXCLUDE.has(cr.str) &&
+          !abilities.includes(cr.str)
+        ) {
+          const lvl = u32LE(buf, cr.end)
+          if (lvl <= 30) {
+            className = cr.str
+            classLevel = lvl
+            break
+          }
+        }
       }
       break
     }
   }
 
-  if (abilities.length === 0) {
-    const strings = findAsciiStrings(buf)
-    const spriteStr = strings.find((s) => /^(male|female)\d+/.test(s.text))
-    if (spriteStr) {
-      const classStr = strings.find(
-        (s) =>
-          s.offset > spriteStr.offset &&
-          /^[A-Z][a-zA-Z]{3,}$/.test(s.text) &&
-          !s.text.startsWith('male') &&
-          !s.text.startsWith('female')
-      )
-      if (classStr) className = classStr.text
+  // Fallback: última string PascalCase pura no blob (geralmente é a classe)
+  if (className === 'Unknown') {
+    const start = Math.max(0x60, buf.length - 1024)
+    for (let i = start; i < buf.length - 12; i++) {
+      const cr = readLenString(buf, i)
+      if (
+        cr &&
+        /^[A-Z][a-zA-Z]{3,29}$/.test(cr.str) &&
+        !ABILITY_EXCLUDE.has(cr.str) &&
+        !abilities.includes(cr.str)
+      ) {
+        const lvl = u32LE(buf, cr.end)
+        if (lvl >= 1 && lvl <= 20) {
+          className = cr.str
+          classLevel = lvl
+          break
+        }
+      }
     }
   }
 

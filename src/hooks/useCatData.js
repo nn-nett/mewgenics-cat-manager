@@ -26,7 +26,11 @@ export function useCatData() {
 
   // ─── Aplica dados parsed vindos do parser ─────────────────────────────────
   const applyParsed = useCallback((parsed, filePath) => {
-    if (parsed?.cats?.length > 0) setCats(parsed.cats)
+    // Mortos e doados nunca aparecem na UI — filtra na fonte
+    const visible = (parsed?.cats || []).filter(
+      (c) => c.status !== 'dead' && c.status !== 'donated'
+    )
+    if (visible.length > 0) setCats(visible)
     if (parsed?.rooms?.length > 0) setRooms(parsed.rooms)
     setCurrentFile(filePath)
     setLastUpdate(new Date())
