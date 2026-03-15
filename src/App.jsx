@@ -15,7 +15,7 @@ export default function App() {
   const {
     cats, rooms, mode, sourceMode, currentFile, lastUpdate,
     isFlashing, isLoading, error, savePath, isElectron, useMock, hasData,
-    loadBrowserFile, startLiveMode, stopLiveMode, openManualFile, toggleMode,
+    loadBrowserFile, resetData, startLiveMode, stopLiveMode, openManualFile, toggleMode,
   } = useCatData()
 
   const { favorites, tags, toggleFavorite, addTag, removeTag, getTagsForCat } = useLocalStore()
@@ -147,7 +147,7 @@ export default function App() {
         useMock={useMock}
         onToggleMode={toggleMode}
         onOpenFile={openManualFile}
-        onReload={!isElectron ? () => loadBrowserFile(null, null) : null}
+        onReload={!isElectron ? resetData : null}
         sourceMode={sourceMode}
       />
 

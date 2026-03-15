@@ -5,39 +5,47 @@
  *   - sql.js (SQLite via WASM) — roda 100% no browser, sem backend
  *   - lz4js (pure JS) — descomprime os blobs LZ4
  *
- * Idêntico em lógica ao electron/savParser.js, mas:
- *   - usa import ES modules em vez de require()
- *   - carrega o WASM de /public/sql-wasm.wasm
- *   - recebe um ArrayBuffer (de FileReader) em vez de um path de arquivo
+ * Estrutura do blob (buffer DESCOMPRIMIDO):
+ *   0x00:            u32  → magic (0x13 = 19)
+ *   0x04–0x0B:       8B   → UUID
+ *   0x0C:            u32  → comprimento do nome (chars UTF-16)
+ *   0x10:            u32  → padding
+ *   0x14:            str  → nome UTF-16 LE (nameLen chars × 2 bytes)
+ *   nameEnd + 0x08:  u16  → sexo (0=M, 1=F, 2=Ditto)
+ *   nameEnd + 0x10:  u16  → flags de status (0x0002=retired, 0x0020=dead, 0x4000=donated)
+ *   0x8C–0x30C:      7×i32 → stats base (STR DEX CON INT SPD CHA LUCK)
+ *   statsOffset+28:  7×i32 → bônus de nível
+ *   near-end:        [u64 len][ASCII class][u32 classLevel]
+ *   abilities:       sequência de [u64 len][ASCII] iniciando em "DefaultMove"
  */
 
-// lz4js é CJS puro — funciona sem ajustes
 import lz4 from 'lz4js'
 
 let SQL = null
 
 async function getSql() {
   if (SQL) return SQL
-  // sql.js é carregado via <script src="/sql-wasm.js"> no index.html
-  // isso registra window.initSqlJs (UMD) sem problemas de ESM
   const initSqlJs = window.initSqlJs
   if (!initSqlJs) throw new Error('sql.js não carregou (window.initSqlJs ausente)')
-  SQL = await initSqlJs({
-    locateFile: () => '/sql-wasm.wasm',
-  })
+  SQL = await initSqlJs({ locateFile: () => '/sql-wasm.wasm' })
   return SQL
 }
 
 // ─── Helpers binários ─────────────────────────────────────────────────────────
+
+function u16LE(buf, off) {
+  if (off + 1 >= buf.length) return 0
+  return (buf[off] | (buf[off + 1] << 8)) >>> 0
+}
 
 function u32LE(buf, off) {
   if (off + 3 >= buf.length) return 0
   return (buf[off] | (buf[off + 1] << 8) | (buf[off + 2] << 16) | (buf[off + 3] << 24)) >>> 0
 }
 
-function u16LE(buf, off) {
-  if (off + 1 >= buf.length) return 0
-  return (buf[off] | (buf[off + 1] << 8)) >>> 0
+function i32LE(buf, off) {
+  if (off + 3 >= buf.length) return 0
+  return buf[off] | (buf[off + 1] << 8) | (buf[off + 2] << 16) | (buf[off + 3] << 24)
 }
 
 function readUtf16LE(buf, offset, charCount) {
@@ -50,6 +58,22 @@ function readUtf16LE(buf, offset, charCount) {
     result += String.fromCharCode(code)
   }
   return result
+}
+
+function readLenString(buf, offset) {
+  if (offset + 8 >= buf.length) return null
+  const lenLo = u32LE(buf, offset)
+  const lenHi = u32LE(buf, offset + 4)
+  if (lenHi !== 0 || lenLo === 0 || lenLo > 128) return null
+  const end = offset + 8 + lenLo
+  if (end > buf.length) return null
+  let str = ''
+  for (let i = 0; i < lenLo; i++) {
+    const c = buf[offset + 8 + i]
+    if (c < 0x20 || c > 0x7E) return null
+    str += String.fromCharCode(c)
+  }
+  return { str, end }
 }
 
 function findAsciiStrings(buf) {
@@ -104,65 +128,165 @@ function decompressBlob(wrapped) {
   return null
 }
 
-// ─── Parser de gato ───────────────────────────────────────────────────────────
+// ─── Extração de campos do blob ───────────────────────────────────────────────
 
-const NAME_OFFSET = 0x14
-const COLLAR_OFFSET = 0x3C
+const STAT_NAMES = ['STR', 'DEX', 'CON', 'INT', 'SPD', 'CHA', 'LUCK']
+const SEX_MAP = { 0: 'M', 1: 'F', 2: 'Ditto' }
 
-function extractSex(buf) {
-  for (const { text } of findAsciiStrings(buf)) {
-    if (text.startsWith('female')) return 'F'
-    if (text.startsWith('male')) return 'M'
+function parseName(buf) {
+  const nameLen = u32LE(buf, 0x0C)
+  if (nameLen === 0 || nameLen > 64) return null
+  const name = readUtf16LE(buf, 0x14, nameLen)
+  if (!name) return null
+  return { name, nameLen }
+}
+
+function parseSex(buf, nameLen) {
+  const nameEnd = 0x14 + nameLen * 2
+  const sexVal = u16LE(buf, nameEnd + 0x08)
+  return SEX_MAP[sexVal] || 'M'
+}
+
+function parseStatus(buf, nameLen) {
+  const nameEnd = 0x14 + nameLen * 2
+  const flags = u16LE(buf, nameEnd + 0x10)
+  if (flags & 0x0020) return 'dead'
+  if (flags & 0x4000) return 'donated'
+  if (flags & 0x0002) return 'retired'
+  return 'active'
+}
+
+function findStats(buf) {
+  const emptyStats = {}
+  STAT_NAMES.forEach((n) => (emptyStats[n] = 0))
+
+  const MIN_OFF = 0x8C
+  const MAX_OFF = Math.min(buf.length - 28, 0x30C)
+
+  // Tentativa 1: todos os 7 valores em 1–25
+  for (let off = MIN_OFF; off <= MAX_OFF; off += 4) {
+    let valid = true
+    const vals = []
+    for (let i = 0; i < 7; i++) {
+      const v = i32LE(buf, off + i * 4)
+      if (v < 1 || v > 25) { valid = false; break }
+      vals.push(v)
+    }
+    if (valid) {
+      const stats = {}
+      const bonusStats = {}
+      STAT_NAMES.forEach((n, i) => {
+        stats[n] = vals[i]
+        bonusStats[n] = i32LE(buf, off + 28 + i * 4)
+      })
+      return { stats, bonusStats }
+    }
   }
-  return '?'
+
+  // Tentativa 2: intervalo mais relaxado (0–30, ao menos 3 não-zero)
+  for (let off = MIN_OFF; off <= MAX_OFF; off += 4) {
+    let valid = true
+    let nonZero = 0
+    const vals = []
+    for (let i = 0; i < 7; i++) {
+      const v = i32LE(buf, off + i * 4)
+      if (v < 0 || v > 30) { valid = false; break }
+      if (v > 0) nonZero++
+      vals.push(v)
+    }
+    if (valid && nonZero >= 3) {
+      const stats = {}
+      STAT_NAMES.forEach((n, i) => (stats[n] = vals[i]))
+      return { stats, bonusStats: {} }
+    }
+  }
+
+  return { stats: emptyStats, bonusStats: {} }
+}
+
+function findAbilitiesAndClass(buf) {
+  let abilities = []
+  let className = 'Unknown'
+  let classLevel = 0
+
+  for (let i = 0x60; i < buf.length - 20; i++) {
+    const r = readLenString(buf, i)
+    if (r && r.str === 'DefaultMove') {
+      let pos = i
+      while (pos < buf.length - 8) {
+        const a = readLenString(buf, pos)
+        if (!a || !/^[A-Z][a-zA-Z0-9]+$/.test(a.str)) break
+        abilities.push(a.str)
+        pos = a.end
+      }
+      const cr = readLenString(buf, pos)
+      if (cr && /^[A-Z][a-zA-Z]+$/.test(cr.str)) {
+        className = cr.str
+        classLevel = u32LE(buf, cr.end)
+        if (classLevel > 100) classLevel = 0
+      }
+      break
+    }
+  }
+
+  if (abilities.length === 0) {
+    const strings = findAsciiStrings(buf)
+    const spriteStr = strings.find((s) => /^(male|female)\d+/.test(s.text))
+    if (spriteStr) {
+      const classStr = strings.find(
+        (s) =>
+          s.offset > spriteStr.offset &&
+          /^[A-Z][a-zA-Z]{3,}$/.test(s.text) &&
+          !s.text.startsWith('male') &&
+          !s.text.startsWith('female')
+      )
+      if (classStr) className = classStr.text
+    }
+  }
+
+  return { abilities, className, classLevel }
 }
 
 function extractSpriteId(buf) {
-  for (const { text } of findAsciiStrings(buf)) {
+  const strings = findAsciiStrings(buf)
+  for (const { text } of strings) {
     if (/^(male|female)\d+/.test(text)) return text
   }
   return null
 }
 
-function extractCollar(buf) {
-  if (COLLAR_OFFSET >= buf.length) return 'None'
-  let result = ''
-  for (let i = COLLAR_OFFSET; i < Math.min(buf.length, COLLAR_OFFSET + 32); i++) {
-    const c = buf[i]
-    if (c === 0) break
-    if (c >= 0x20 && c <= 0x7E) result += String.fromCharCode(c)
-    else if (result.length > 0) break
-  }
-  return result || 'None'
-}
+// ─── Parser principal de blob ─────────────────────────────────────────────────
 
 function parseCatBlob(buf, key) {
-  if (!buf || buf.length < 0x40) return null
+  if (!buf || buf.length < 0x60) return null
 
-  const nameLen = u32LE(buf, 0x0C)
-  if (nameLen === 0 || nameLen > 64) return null
+  const parsed = parseName(buf)
+  if (!parsed) return null
+  const { name, nameLen } = parsed
 
-  const name = readUtf16LE(buf, NAME_OFFSET, nameLen)
-  if (!name || !/^[\x20-\x7E\u00C0-\u024F]+$/.test(name)) return null
+  if (!/^[\x20-\x7E\u00C0-\u024F\u0100-\u024F]+$/.test(name)) return null
 
-  const gender = extractSex(buf)
+  const gender = parseSex(buf, nameLen)
+  const status = parseStatus(buf, nameLen)
+  const { stats, bonusStats } = findStats(buf)
+  const { abilities, className, classLevel } = findAbilitiesAndClass(buf)
   const spriteId = extractSpriteId(buf)
-  const collar = extractCollar(buf)
 
   return {
     id: String(key),
     name,
-    class: collar !== 'None' ? collar : 'Unknown',
+    class: className,
+    classLevel,
     room: 'Unknown',
-    status: 'active',
+    status,
     age: 0,
     gender,
     spriteId,
-    stats: { STR: 0, DEX: 0, INT: 0, VIT: 0, LCK: 0 },
-    abilities: [],
+    stats,
+    bonusStats,
+    abilities: abilities.filter((a) => a !== 'DefaultMove'),
     mutations: [],
-    _collar: collar,
-    _spriteId: spriteId,
+    _blobSize: buf.length,
   }
 }
 
@@ -181,7 +305,7 @@ export async function parseSaveBrowser(arrayBuffer) {
 
   // Propriedades
   try {
-    const props = db.exec("SELECT key, data FROM properties")
+    const props = db.exec('SELECT key, data FROM properties')
     if (props[0]) {
       for (const [k, v] of props[0].values) result.properties[k] = v
     }
@@ -189,7 +313,7 @@ export async function parseSaveBrowser(arrayBuffer) {
 
   // Gatos
   try {
-    const catsResult = db.exec("SELECT key, data FROM cats")
+    const catsResult = db.exec('SELECT key, data FROM cats')
     if (catsResult[0]) {
       for (const [key, blobRaw] of catsResult[0].values) {
         if (!(blobRaw instanceof Uint8Array)) continue
@@ -210,11 +334,13 @@ export async function parseSaveBrowser(arrayBuffer) {
       const blobRaw = filesResult[0].values[0][1]
       if (blobRaw instanceof Uint8Array) {
         const strings = findAsciiStrings(blobRaw)
-        const roomNames = [...new Set(
-          strings.map((s) => s.text).filter((s) =>
-            /^(Floor|Room|Garden|Library|Barracks|Chapel|Crypt)\d*/i.test(s)
-          )
-        )]
+        const roomNames = [
+          ...new Set(
+            strings
+              .map((s) => s.text)
+              .filter((s) => /^(Floor|Room|Garden|Library|Barracks|Chapel|Crypt)\d*/i.test(s))
+          ),
+        ]
         result.rooms = roomNames.map((name, i) => ({ id: String(i), name, capacity: 6, cats: [] }))
       }
     }

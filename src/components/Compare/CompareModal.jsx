@@ -1,4 +1,5 @@
-const STAT_KEYS = ['STR', 'DEX', 'INT', 'VIT', 'LCK']
+const STAT_KEYS = ['STR', 'DEX', 'CON', 'INT', 'SPD', 'CHA', 'LUCK']
+const STAT_ICONS = { STR: '♠', DEX: '♣', CON: '♥', INT: '♦', SPD: '🐾', CHA: '💋', LUCK: '★' }
 
 export default function CompareModal({ cats, onClose }) {
   if (!cats || cats.length < 2) return null
@@ -52,7 +53,7 @@ export default function CompareModal({ cats, onClose }) {
               {/* Cada stat */}
               {STAT_KEYS.map((stat) => (
                 <tr key={stat} className="border-b border-purple-dark/20 hover:bg-bg-hover">
-                  <td className="px-4 py-2 text-muted/70">{stat}</td>
+                  <td className="px-4 py-2 text-muted/70">{STAT_ICONS[stat] || ''} {stat}</td>
                   {cats.map((cat) => {
                     const val = (cat.stats || {})[stat] || 0
                     const isBest = val === maxStats[stat] && cats.length > 1

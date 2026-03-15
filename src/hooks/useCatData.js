@@ -117,6 +117,16 @@ export function useCatData() {
     else startLiveMode()
   }, [mode, startLiveMode, stopLiveMode])
 
+  // Volta à drop zone (browser only)
+  const resetData = useCallback(() => {
+    setCats([])
+    setRooms([])
+    setCurrentFile(null)
+    setLastUpdate(null)
+    setSourceMode('none')
+    setError(null)
+  }, [])
+
   return {
     cats,
     rooms,
@@ -132,6 +142,7 @@ export function useCatData() {
     useMock: sourceMode === 'mock',
     hasData: cats.length > 0,
     loadBrowserFile,  // para o SaveDropZone
+    resetData,        // volta à drop zone
     startLiveMode,
     stopLiveMode,
     openManualFile,

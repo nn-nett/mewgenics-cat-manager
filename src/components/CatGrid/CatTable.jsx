@@ -4,7 +4,11 @@ const STATUS_COLORS = {
   dead: 'text-muted',
 }
 
-const STAT_COLS = ['STR', 'DEX', 'INT', 'VIT', 'LCK']
+const STAT_COLS = ['STR', 'DEX', 'CON', 'INT', 'SPD', 'CHA', 'LUCK']
+
+const STAT_ICONS = {
+  STR: '♠', DEX: '♣', CON: '♥', INT: '♦', SPD: '🐾', CHA: '💋', LUCK: '★',
+}
 
 export default function CatTable({
   cats,
@@ -73,8 +77,9 @@ export default function CatTable({
                 key={s}
                 className="px-2 py-2 text-center cursor-pointer hover:text-white"
                 onClick={() => handleSort(`stats.${s}`)}
+                title={s}
               >
-                {s} <SortIcon col={`stats.${s}`} />
+                {STAT_ICONS[s] || s} <SortIcon col={`stats.${s}`} />
               </th>
             ))}
             <th className="px-2 py-2 text-left">Habilidades</th>

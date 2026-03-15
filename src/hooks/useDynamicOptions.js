@@ -25,7 +25,7 @@ export function useDynamicOptions(cats) {
     const mutations = [...new Set(cats.flatMap((c) => c.mutations || []))].sort()
 
     // Range de stats baseado nos dados reais
-    const statKeys = ['STR', 'DEX', 'INT', 'VIT', 'LCK']
+    const statKeys = ['STR', 'DEX', 'CON', 'INT', 'SPD', 'CHA', 'LUCK']
     const statRanges = {}
     for (const stat of statKeys) {
       const values = cats.map((c) => (c.stats || {})[stat] || 0).filter((v) => !isNaN(v))
