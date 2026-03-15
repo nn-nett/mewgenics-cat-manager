@@ -378,10 +378,13 @@ async function parseSave(filePath) {
         const catKeys = new Set(result.cats.map((c) => Number(c.id)))
         for (const { offset, text } of strings) {
           if (!ROOM_PAT.test(text)) continue
-          const end = Math.min(buf.length - 4, offset + text.length + 512)
-          for (let p = offset + text.length; p < end; p += 4) {
+          const winStart = Math.max(0, offset - 256)
+          const winEnd = Math.min(buf.length - 4, offset + text.length + 1024)
+          for (let p = winStart; p <= winEnd; p++) {
             const v = u32LE(buf, p)
-            if (catKeys.has(v)) catToRoom[String(v)] = text
+            if (catKeys.has(v) && v > 0) {
+              if (!catToRoom[String(v)]) catToRoom[String(v)] = text
+            }
           }
         }
         for (const cat of result.cats) {

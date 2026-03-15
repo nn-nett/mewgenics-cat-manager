@@ -21,7 +21,7 @@ export default function App() {
   const { favorites, tags, toggleFavorite, addTag, removeTag, getTagsForCat } = useLocalStore()
   const options = useDynamicOptions(cats)
 
-  const [filters, setFilters] = useState({ statuses: ['active'] })
+  const [filters, setFilters] = useState({ statuses: ['active'], onlyInRoom: true })
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
   const [viewMode, setViewMode] = useState('grid') // 'grid' | 'list'
@@ -36,6 +36,9 @@ export default function App() {
 
     if (filters.onlyFavorites) {
       result = result.filter((c) => favorites.includes(c.id))
+    }
+    if (filters.onlyInRoom) {
+      result = result.filter((c) => c.room && c.room !== 'Unknown')
     }
     if (filters.statuses?.length) {
       result = result.filter((c) => filters.statuses.includes(c.status))

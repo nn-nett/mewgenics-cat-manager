@@ -372,22 +372,27 @@ export async function parseSaveBrowser(arrayBuffer) {
         result.rooms = roomNames.map((name, i) => ({ id: String(i), name, capacity: 6, cats: [] }))
 
         // Tenta montar mapa catKey → roomName heurístico
-        // Cada nome de cômodo no buffer pode ser seguido ou precedido de cat keys (u32)
+        // Varre janela ao redor de cada nome de cômodo (antes e depois) em todos os alinhamentos
         const catToRoom = {}
+        const catKeys = new Set(result.cats.map((c) => Number(c.id)))
         for (const { offset, text } of strings) {
           if (!ROOM_PAT.test(text)) continue
-          // Scan até 512 bytes após o nome do cômodo procurando u32 que sejam cat keys válidos
-          const catKeys = new Set(result.cats.map((c) => Number(c.id)))
-          const end = Math.min(buf.length - 4, offset + text.length + 512)
-          for (let p = offset + text.length; p < end; p += 4) {
+          const winStart = Math.max(0, offset - 256)
+          const winEnd = Math.min(buf.length - 4, offset + text.length + 1024)
+          for (let p = winStart; p <= winEnd; p++) {
             const v = u32LE(buf, p)
-            if (catKeys.has(v)) catToRoom[String(v)] = text
+            if (catKeys.has(v) && v > 0) {
+              // Só sobrescreve se ainda não mapeado (primeiro encontro = mais próximo)
+              if (!catToRoom[String(v)]) catToRoom[String(v)] = text
+            }
           }
         }
         // Aplica o mapa
         for (const cat of result.cats) {
           if (catToRoom[cat.id]) cat.room = catToRoom[cat.id]
         }
+        const inRoom = result.cats.filter((c) => c.room && c.room !== 'Unknown').length
+        console.log(`[savParserBrowser] Cômodos detectados: ${roomNames.join(', ')} | Gatos mapeados: ${inRoom}/${result.cats.length}`)
       }
     }
   } catch (_) {}

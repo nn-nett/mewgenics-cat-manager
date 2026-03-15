@@ -38,7 +38,8 @@ export default function FilterPanel({ options, filters, onFiltersChange, totalCo
     filters.abilities?.length > 0 ||
     filters.mutations?.length > 0 ||
     filters.tagFilters?.length > 0 ||
-    filters.onlyFavorites
+    filters.onlyFavorites ||
+    filters.onlyInRoom
 
   return (
     <aside className="w-56 flex-shrink-0 bg-bg-dark border-r border-purple-dark/50 flex flex-col overflow-hidden">
@@ -62,6 +63,21 @@ export default function FilterPanel({ options, filters, onFiltersChange, totalCo
             />
             <span className="text-xs font-mono text-muted group-hover:text-white transition-colors">
               Apenas favoritos
+            </span>
+          </label>
+        </Section>
+
+        {/* Na casa */}
+        <Section label="🏠 Na Casa" open={true} onToggle={() => {}}>
+          <label className="flex items-center gap-2 cursor-pointer group">
+            <input
+              type="checkbox"
+              checked={filters.onlyInRoom || false}
+              onChange={(e) => set('onlyInRoom', e.target.checked)}
+              className="accent-neon-green"
+            />
+            <span className="text-xs font-mono text-muted group-hover:text-white transition-colors">
+              Apenas em cômodo
             </span>
           </label>
         </Section>
