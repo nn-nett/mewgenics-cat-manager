@@ -376,19 +376,37 @@ async function parseSave(filePath) {
 
         const catToRoom = {}
         const catKeys = new Set(result.cats.map((c) => Number(c.id)))
+        const uuidToCatId = {}
+        for (const cat of result.cats) {
+          if (cat._uuid) uuidToCatId[cat._uuid] = cat.id
+        }
         for (const { offset, text } of strings) {
           if (!ROOM_PAT.test(text)) continue
-          const winStart = Math.max(0, offset - 256)
-          const winEnd = Math.min(buf.length - 4, offset + text.length + 1024)
+          const winStart = Math.max(0, offset - 512)
+          const winEnd = Math.min(buf.length - 8, offset + text.length + 2048)
           for (let p = winStart; p <= winEnd; p++) {
-            const v = u32LE(buf, p)
-            if (catKeys.has(v) && v > 0) {
-              if (!catToRoom[String(v)]) catToRoom[String(v)] = text
+            if (p + 3 < buf.length) {
+              const v = u32LE(buf, p)
+              if (catKeys.has(v) && v > 0 && !catToRoom[String(v)]) catToRoom[String(v)] = text
+            }
+            if (p + 8 <= buf.length) {
+              const hex = buf.slice(p, p + 8).toString('hex')
+              const catId = uuidToCatId[hex]
+              if (catId && !catToRoom[catId]) catToRoom[catId] = text
             }
           }
         }
         for (const cat of result.cats) {
           if (catToRoom[cat.id]) cat.room = catToRoom[cat.id]
+        }
+        const inRoom = result.cats.filter((c) => c.room && c.room !== 'Unknown').length
+        console.log(`[savParser] house_state: ${buf.length}b | rooms: [${roomNames.join(', ')}] | mapeados: ${inRoom}/${result.cats.length}`)
+        if (inRoom === 0) {
+          console.log('[savParser] UUIDs:', result.cats.slice(0, 5).map((c) => `${c.name}=${c._uuid}`).join(' | '))
+          for (const { offset: off, text } of strings.filter((s) => ROOM_PAT.test(s.text))) {
+            const hex16 = buf.slice(Math.max(0, off - 8), Math.min(buf.length, off + text.length + 24)).toString('hex')
+            console.log(`[savParser] "${text}" @ 0x${off.toString(16)}: ${hex16}`)
+          }
         }
       }
     }

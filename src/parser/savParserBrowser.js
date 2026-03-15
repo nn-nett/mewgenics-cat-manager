@@ -371,28 +371,59 @@ export async function parseSaveBrowser(arrayBuffer) {
         const roomNames = [...new Set(strings.map((s) => s.text).filter((s) => ROOM_PAT.test(s)))]
         result.rooms = roomNames.map((name, i) => ({ id: String(i), name, capacity: 6, cats: [] }))
 
-        // Tenta montar mapa catKey → roomName heurístico
-        // Varre janela ao redor de cada nome de cômodo (antes e depois) em todos os alinhamentos
+        // Mapa catKey → roomName: tenta por u32 key E por UUID (8 bytes)
         const catToRoom = {}
         const catKeys = new Set(result.cats.map((c) => Number(c.id)))
+
+        // uuid hex → catId (ex: "0a1b2c3d4e5f6070" → "42")
+        const uuidToCatId = {}
+        for (const cat of result.cats) {
+          if (cat._uuid) uuidToCatId[cat._uuid] = cat.id
+        }
+
         for (const { offset, text } of strings) {
           if (!ROOM_PAT.test(text)) continue
-          const winStart = Math.max(0, offset - 256)
-          const winEnd = Math.min(buf.length - 4, offset + text.length + 1024)
+          const winStart = Math.max(0, offset - 512)
+          const winEnd = Math.min(buf.length - 8, offset + text.length + 2048)
+
           for (let p = winStart; p <= winEnd; p++) {
-            const v = u32LE(buf, p)
-            if (catKeys.has(v) && v > 0) {
-              // Só sobrescreve se ainda não mapeado (primeiro encontro = mais próximo)
-              if (!catToRoom[String(v)]) catToRoom[String(v)] = text
+            // Tentativa 1: u32 key
+            if (p + 3 < buf.length) {
+              const v = u32LE(buf, p)
+              if (catKeys.has(v) && v > 0 && !catToRoom[String(v)]) {
+                catToRoom[String(v)] = text
+              }
+            }
+            // Tentativa 2: UUID de 8 bytes
+            if (p + 8 <= buf.length) {
+              const hex = Array.from(buf.slice(p, p + 8))
+                .map((b) => b.toString(16).padStart(2, '0'))
+                .join('')
+              const catId = uuidToCatId[hex]
+              if (catId && !catToRoom[catId]) {
+                catToRoom[catId] = text
+              }
             }
           }
         }
+
         // Aplica o mapa
         for (const cat of result.cats) {
           if (catToRoom[cat.id]) cat.room = catToRoom[cat.id]
         }
         const inRoom = result.cats.filter((c) => c.room && c.room !== 'Unknown').length
-        console.log(`[savParserBrowser] Cômodos detectados: ${roomNames.join(', ')} | Gatos mapeados: ${inRoom}/${result.cats.length}`)
+        console.log(`[savParser] house_state: ${buf.length}b | rooms: [${roomNames.join(', ')}] | mapeados: ${inRoom}/${result.cats.length}`)
+        if (inRoom === 0) {
+          // Dump de diagnóstico: primeiros 32 bytes de cada cat uuid e os primeiros keys
+          console.log('[savParser] UUIDs dos gatos:', result.cats.slice(0, 5).map((c) => `${c.name}=${c._uuid}`).join(' | '))
+          console.log('[savParser] Keys dos gatos:', result.cats.slice(0, 10).map((c) => c.id).join(', '))
+          // Dump das posições dos nomes de cômodo
+          for (const { offset: off, text } of strings.filter((s) => ROOM_PAT.test(s.text))) {
+            const hex16 = Array.from(buf.slice(Math.max(0, off - 8), Math.min(buf.length, off + text.length + 24)))
+              .map((b) => b.toString(16).padStart(2, '0')).join(' ')
+            console.log(`[savParser] "${text}" @ 0x${off.toString(16)}: ${hex16}`)
+          }
+        }
       }
     }
   } catch (_) {}
