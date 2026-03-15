@@ -183,21 +183,25 @@ function findStats(buf) {
     }
   }
 
-  // Tentativa 2: intervalo mais relaxado (0–30, ao menos 3 não-zero)
+  // Tentativa 2: intervalo 0–20, ao menos 5 valores não-zero
   for (let off = MIN_OFF; off <= MAX_OFF; off += 4) {
     let valid = true
     let nonZero = 0
     const vals = []
     for (let i = 0; i < 7; i++) {
       const v = i32LE(buf, off + i * 4)
-      if (v < 0 || v > 30) { valid = false; break }
+      if (v < 0 || v > 20) { valid = false; break }
       if (v > 0) nonZero++
       vals.push(v)
     }
-    if (valid && nonZero >= 3) {
+    if (valid && nonZero >= 5) {
       const stats = {}
-      STAT_NAMES.forEach((n, i) => (stats[n] = vals[i]))
-      return { stats, bonusStats: {} }
+      const bonusStats = {}
+      STAT_NAMES.forEach((n, i) => {
+        stats[n] = vals[i]
+        bonusStats[n] = i32LE(buf, off + 28 + i * 4)
+      })
+      return { stats, bonusStats }
     }
   }
 
@@ -256,6 +260,22 @@ function findAbilitiesAndClass(buf) {
   return { abilities, className, classLevel }
 }
 
+const MEWGENICS_ROOMS = /^(Garden|Library|Barracks|Chapel|Crypt|Floor|Room|Training|Dormitory|Stable|Workshop|Shrine|Tower|Dungeon)\d*$/i
+
+function findRoomInBlob(buf) {
+  // Tenta encontrar o cômodo como string prefixada por comprimento
+  for (let i = 0; i < buf.length - 12; i++) {
+    const r = readLenString(buf, i)
+    if (r && MEWGENICS_ROOMS.test(r.str)) return r.str
+  }
+  // Fallback: ASCII puro
+  const strings = findAsciiStrings(buf)
+  for (const { text } of strings) {
+    if (MEWGENICS_ROOMS.test(text)) return text
+  }
+  return 'Unknown'
+}
+
 function extractSpriteId(buf) {
   const strings = findAsciiStrings(buf)
   for (const { text } of strings) {
@@ -286,7 +306,7 @@ function parseCatBlob(buf, key) {
     name,
     class: className,
     classLevel,
-    room: 'Unknown',
+    room: findRoomInBlob(buf),
     status,
     age: 0,
     gender,

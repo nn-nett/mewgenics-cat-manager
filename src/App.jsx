@@ -21,7 +21,7 @@ export default function App() {
   const { favorites, tags, toggleFavorite, addTag, removeTag, getTagsForCat } = useLocalStore()
   const options = useDynamicOptions(cats)
 
-  const [filters, setFilters] = useState({})
+  const [filters, setFilters] = useState({ statuses: ['active'] })
   const [sortKey, setSortKey] = useState('name')
   const [sortDir, setSortDir] = useState('asc')
   const [viewMode, setViewMode] = useState('grid') // 'grid' | 'list'
